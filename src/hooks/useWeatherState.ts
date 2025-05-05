@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
-import { Alert, Platform } from 'react-native';
+import { Alert, Keyboard, Platform } from 'react-native';
 import { PERMISSIONS, request, RESULTS } from 'react-native-permissions';
 import { useWeatherData, useWeatherForecast, getPlaceDetails, getPlaceSuggestions } from '../services/api';
 
@@ -92,7 +92,7 @@ export const useWeatherState = () => {
       setSearching(true);
       setSuggestionsLoading(true);
       setShowSkeleton(true);
-
+      Keyboard.dismiss();
       const data = await getPlaceDetails(suggestion.place_id);
       if (data.result?.geometry?.location) {
         const location = data.result.geometry.location;

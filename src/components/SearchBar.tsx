@@ -50,7 +50,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       />
       {suggestions.length > 0 && (
         <View style={styles.suggestionsContainer}>
-          <ScrollView style={{flexGrow: 1}} >
+          <ScrollView style={{flexGrow: 1}} keyboardShouldPersistTaps="handled">
           {suggestions.map((suggestion) => (
             <TouchableOpacity
               key={suggestion.place_id}
