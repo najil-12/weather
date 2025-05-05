@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from '@react-native-community/geolocation';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { PERMISSIONS, request, RESULTS } from 'react-native-permissions';
 import { useWeatherData, useWeatherForecast, getPlaceDetails, getPlaceSuggestions } from '../services/api';
 
@@ -119,7 +119,7 @@ export const useWeatherState = () => {
     }
   }, [fetchWeatherByCoords, fetchForecast]);
 
-  const handleLocationPress = useCallback(async () => {
+  const handleLocationPermission = useCallback(async () => {
     try {
       const hasPermission = await requestLocationPermission();
       if (hasPermission) {
@@ -128,8 +128,10 @@ export const useWeatherState = () => {
           async (position) => {
             try {
               await fetchWeatherByCoords(position.coords.latitude, position.coords.longitude);
-              if (weatherData?.location) {
-                await fetchForecast(weatherData.location.lat, weatherData.location.lon);
+              console.log('Weather data:', weatherData);
+              
+              if (position.coords) {
+                await fetchForecast(position.coords.latitude, position.coords.longitude);
               }
             } finally {
               setShowSkeleton(false);
@@ -161,7 +163,8 @@ export const useWeatherState = () => {
   }, [weatherData, fetchWeatherByCoords, fetchForecast]);
 
   const requestLocationPermission = async () => {
-    const result = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
+    const permission = Platform.OS === 'android' ? PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION : PERMISSIONS.IOS.LOCATION_WHEN_IN_USE;
+    const result = await request(permission);
     return result === RESULTS.GRANTED;
   };
 
@@ -181,13 +184,13 @@ export const useWeatherState = () => {
       if (!weatherData?.location) {
         const granted = await requestLocationPermission();
         if (granted) {
-          handleLocationPress();
+          handleLocationPermission();
         }
       }
     };
 
     checkAndRequestLocationPermission();
-  }, [weatherData, handleLocationPress]);
+  }, [weatherData, handleLocationPermission]);
 
   useEffect(() => {
     return () => {
@@ -196,61 +199,6 @@ export const useWeatherState = () => {
       setSuggestionsLoading(false);
     };
   }, []);
-
-  useEffect(() => {
-    const loadSavedData = async () => {
-      try {
-        const savedCity = await AsyncStorage.getItem(STORAGE_KEYS.SELECTED_CITY);
-        const savedWeatherData = await AsyncStorage.getItem(STORAGE_KEYS.WEATHER_DATA);
-        const savedForecastData = await AsyncStorage.getItem(STORAGE_KEYS.FORECAST_DATA);
-
-        if (savedCity) {
-          setCityInput(savedCity);
-          
-          if (savedWeatherData) {
-            try {
-              const parsedWeatherData = JSON.parse(savedWeatherData);
-              if (parsedWeatherData.location) {
-                const { lat, lon } = parsedWeatherData.location;
-                console.log('Loading saved weather data for coordinates:', { lat, lon });
-                
-                await Promise.all([
-                  fetchWeatherByCoords(lat, lon),
-                  fetchForecast(lat, lon)
-                ]);
-              }
-            } catch (e) {
-              console.error('Error parsing saved weather data:', e);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error loading saved data:', error);
-      }
-    };
-
-    loadSavedData();
-  }, [fetchWeatherByCoords, fetchForecast]);
-
-  useEffect(() => {
-    const saveData = async () => {
-      try {
-        if (cityInput) {
-          await AsyncStorage.setItem(STORAGE_KEYS.SELECTED_CITY, cityInput);
-        }
-        if (weatherData) {
-          await AsyncStorage.setItem(STORAGE_KEYS.WEATHER_DATA, JSON.stringify(weatherData));
-        }
-        if (forecastData) {
-          await AsyncStorage.setItem(STORAGE_KEYS.FORECAST_DATA, JSON.stringify(forecastData));
-        }
-      } catch (error) {
-        console.error('Error saving data:', error);
-      }
-    };
-
-    saveData();
-  }, [cityInput, weatherData, forecastData]);
 
   return {
     cityInput,
@@ -269,7 +217,7 @@ export const useWeatherState = () => {
     handleSearch,
     handleInputChange,
     handleSuggestionSelect,
-    handleLocationPress,
+    handleLocationPermission,
     onRefresh
   };
 }; 

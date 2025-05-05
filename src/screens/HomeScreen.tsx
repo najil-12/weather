@@ -32,17 +32,13 @@ export const HomeScreen: React.FC = () => {
     showSkeleton,
     suggestions,
     searching,
-    suggestionsLoading,
     weatherData,
-    weatherLoading,
     weatherError,
     forecastData,
-    forecastLoading,
     forecastError,
     handleSearch,
     handleInputChange,
     handleSuggestionSelect,
-    handleLocationPress,
     onRefresh
   } = useWeatherState();
 
