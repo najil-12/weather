@@ -1,15 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDispatch, useSelector } from 'react-redux';
 import Geolocation from '@react-native-community/geolocation';
 import { Alert, Keyboard, Platform } from 'react-native';
 import { PERMISSIONS, request, RESULTS } from 'react-native-permissions';
 import { useWeatherData, useWeatherForecast, getPlaceDetails, getPlaceSuggestions } from '../services/api';
-
-const STORAGE_KEYS = {
-  SELECTED_CITY: 'selected_city',
-  WEATHER_DATA: 'weather_data',
-  FORECAST_DATA: 'forecast_data',
-};
+import { RootState, AppDispatch } from '../store/store';
+import { fetchWeatherByCity, fetchWeatherByCoords, fetchWeatherForecastByCoords } from '../store/weatherSlice';
 
 interface Suggestion {
   place_id: string;
@@ -17,6 +13,9 @@ interface Suggestion {
 }
 
 export const useWeatherState = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { city, weatherData, weatherForecast, loading: weatherLoading, error: weatherError } = useSelector((state: RootState) => state.weather);
+
   const [cityInput, setCityInput] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -24,34 +23,22 @@ export const useWeatherState = () => {
   const [searching, setSearching] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
-  const { 
-    data: weatherData, 
-    loading: weatherLoading, 
-    error: weatherError, 
-    fetchWeatherByCity, 
-    fetchWeatherByCoords 
-  } = useWeatherData();
-
-  const {
-    data: forecastData,
-    loading: forecastLoading,
-    error: forecastError,
-    fetchForecast
-  } = useWeatherForecast();
-
   const handleSearch = useCallback(async () => {
     if (cityInput.trim()) {
       setSearching(true);
       try {
-        await fetchWeatherByCity(cityInput.trim());
+        await dispatch(fetchWeatherByCity(cityInput.trim()));
         if (weatherData?.location) {
-          await fetchForecast(weatherData.location.lat, weatherData.location.lon);
+          await dispatch(fetchWeatherForecastByCoords({
+            lat: weatherData.location.lat,
+            lon: weatherData.location.lon
+          }));
         }
       } finally {
         setSearching(false);
       }
     }
-  }, [cityInput, fetchWeatherByCity, fetchForecast, weatherData]);
+  }, [cityInput, dispatch, weatherData]);
 
   const debouncedFetchSuggestions = useCallback(
     (input: string) => {
@@ -97,11 +84,9 @@ export const useWeatherState = () => {
       if (data.result?.geometry?.location) {
         const location = data.result.geometry.location;
         await Promise.all([
-          fetchWeatherByCoords(location.lat, location.lng),
-          fetchForecast(location.lat, location.lng)
+          dispatch(fetchWeatherByCoords({ lat: location.lat, lon: location.lng })),
+          dispatch(fetchWeatherForecastByCoords({ lat: location.lat, lon: location.lng }))
         ]);
-        
-        await AsyncStorage.setItem(STORAGE_KEYS.SELECTED_CITY, suggestion.description);
       } else {
         throw new Error('Invalid place details response');
       }
@@ -117,9 +102,9 @@ export const useWeatherState = () => {
       setSuggestionsLoading(false);
       setShowSkeleton(false);
     }
-  }, [fetchWeatherByCoords, fetchForecast]);
+  }, [dispatch]);
 
-  const handleLocationPermission = useCallback(async () => {
+  const handleLocationPermission = async () => {
     try {
       const hasPermission = await requestLocationPermission();
       if (hasPermission) {
@@ -127,11 +112,15 @@ export const useWeatherState = () => {
         Geolocation.getCurrentPosition(
           async (position) => {
             try {
-              await fetchWeatherByCoords(position.coords.latitude, position.coords.longitude);
-              console.log('Weather data:', weatherData);
-              
+              await dispatch(fetchWeatherByCoords({
+                lat: position.coords.latitude,
+                lon: position.coords.longitude
+              }));
               if (position.coords) {
-                await fetchForecast(position.coords.latitude, position.coords.longitude);
+                await dispatch(fetchWeatherForecastByCoords({
+                  lat: position.coords.latitude,
+                  lon: position.coords.longitude
+                }));
               }
             } finally {
               setShowSkeleton(false);
@@ -148,22 +137,28 @@ export const useWeatherState = () => {
       console.error('Error handling location:', error);
       setShowSkeleton(false);
     }
-  }, [fetchWeatherByCoords, fetchForecast, weatherData]);
-
+  }
+    
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       if (weatherData?.location) {
-        await fetchWeatherByCoords(weatherData.location.lat, weatherData.location.lon);
-        await fetchForecast(weatherData.location.lat, weatherData.location.lon);
+        await dispatch(fetchWeatherByCoords({
+          lat: weatherData.location.lat,
+          lon: weatherData.location.lon
+        }));
+        await dispatch(fetchWeatherForecastByCoords({
+          lat: weatherData.location.lat,
+          lon: weatherData.location.lon
+        }));
       }
     } finally {
       setRefreshing(false);
     }
-  }, [weatherData, fetchWeatherByCoords, fetchForecast]);
+  }, [weatherData, dispatch]);
 
   const requestLocationPermission = async () => {
-    const permission = Platform.OS === 'android' ? PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION : PERMISSIONS.IOS.LOCATION_WHEN_IN_USE;
+    const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
     const result = await request(permission);
     return result === RESULTS.GRANTED;
   };
@@ -181,7 +176,7 @@ export const useWeatherState = () => {
 
   useEffect(() => {
     const checkAndRequestLocationPermission = async () => {
-      if (!weatherData?.location) {
+      if (!city) {
         const granted = await requestLocationPermission();
         if (granted) {
           handleLocationPermission();
@@ -190,7 +185,7 @@ export const useWeatherState = () => {
     };
 
     checkAndRequestLocationPermission();
-  }, [weatherData, handleLocationPermission]);
+  }, [city]);
 
   useEffect(() => {
     return () => {
@@ -211,9 +206,9 @@ export const useWeatherState = () => {
     weatherData,
     weatherLoading,
     weatherError,
-    forecastData,
-    forecastLoading,
-    forecastError,
+    forecastData: weatherForecast,
+    forecastLoading: weatherLoading,
+    forecastError: weatherError,
     handleSearch,
     handleInputChange,
     handleSuggestionSelect,
